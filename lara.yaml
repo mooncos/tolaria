@@ -25,6 +25,7 @@ locales:
     - pl-PL
     - be-BY
     - id-ID
+    - sv-SE
 
 files:
   json:
