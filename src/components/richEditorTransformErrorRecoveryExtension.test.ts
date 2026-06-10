@@ -114,6 +114,7 @@ describe('isRecoverableEditorTransformError', () => {
     expect(isRecoverableEditorTransformError(new Error(
       'Block with ID 6c1c3bb4-e218-4f00-aaf5-40606852d286 not found',
     ))).toBe(true)
+    expect(isRecoverableEditorTransformError(new Error("Block doesn't have id"))).toBe(true)
     expect(isRecoverableEditorTransformError(nullFragmentAppendError())).toBe(true)
     const stackOnlyAppendError = nullFragmentAppendError("Cannot read properties of null (reading 'append')")
     stackOnlyAppendError.stack =
@@ -123,7 +124,7 @@ describe('isRecoverableEditorTransformError', () => {
     expect(isRecoverableEditorTransformError(webkitNotFoundError())).toBe(true)
     expect(isRecoverableEditorTransformError(new TypeError(
       "Cannot read properties of null (reading 'append')",
-    ))).toBe(false)
+    ))).toBe(true)
     expect(isRecoverableEditorTransformError(new Error('unrelated'))).toBe(false)
   })
 })
@@ -203,6 +204,29 @@ describe('installRichEditorTransformErrorRecovery', () => {
     })
   })
 
+  it('repairs missing-id block transactions before they escape dispatch', () => {
+    expectDocumentRepairRecovery(
+      new Error("Block doesn't have id"),
+      'block_missing_id',
+    )
+  })
+
+  it('repairs missing-id block failures thrown during keydown handling', () => {
+    const { view, keyDownPlugin } = createViewWithSomeProp(() => {
+      throw new Error("Block doesn't have id")
+    })
+    const recoverDocument = vi.fn()
+
+    installRichEditorTransformErrorRecovery(view, { recoverDocument })
+
+    expect(view.someProp('handleKeyDown', (handler) => handler())).toBe(true)
+    expect(keyDownPlugin).toHaveBeenCalledTimes(1)
+    expect(recoverDocument).toHaveBeenCalledTimes(1)
+    expect(trackEvent).toHaveBeenCalledWith('rich_editor_transform_error_recovered', {
+      reason: 'block_missing_id',
+    })
+  })
+
   it('recovers invalid table-cell joins thrown during keydown handling', () => {
     const { view, keyDownPlugin } = createViewWithSomeProp(() => {
       throw transformError('Cannot join tableCell onto blockContainer')
@@ -261,6 +285,13 @@ describe('installRichEditorTransformErrorRecovery', () => {
   it('repairs null fragment append failures from invalid document model fills', () => {
     expectDocumentRepairRecovery(
       nullFragmentAppendError(),
+      'null_fragment_append',
+    )
+  })
+
+  it('repairs production null append failures reported without a fillBefore stack', () => {
+    expectDocumentRepairRecovery(
+      new TypeError("Cannot read properties of null (reading 'append')"),
       'null_fragment_append',
     )
   })

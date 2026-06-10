@@ -2,14 +2,17 @@ const BLOCKNOTE_MISSING_ID_ERROR = "Block doesn't have id"
 const BLOCKNOTE_BLOCK_TYPE_MISMATCH_ERROR = 'Block type does not match'
 const BLOCKNOTE_TABLE_ROW_INDEX_ERROR = /^Index \d+ out of range for <tableRow\(/
 const BLOCKNOTE_PARAGRAPH_INDEX_ERROR = /^Index \d+ out of range for <paragraph\(/
+const NULL_APPEND_PROPERTY_ERROR = "Cannot read properties of null (reading 'append')"
 
 export type BlockNoteRenderRecoveryReason =
   | 'block_type_mismatch'
   | 'block_missing_id'
   | 'paragraph_index_out_of_range'
+  | 'stale_block_reference'
   | 'table_row_index_out_of_range'
 
 export type RichEditorTransformRecoveryReason =
+  | 'block_missing_id'
   | 'dom_index_size'
   | 'dom_not_found'
   | 'invalid_block_join'
@@ -67,6 +70,7 @@ function isInvalidBlockJoinError(error: unknown): boolean {
 
 function isNullFragmentAppendError(error: unknown): boolean {
   if (!(error instanceof TypeError)) return false
+  if (error.message === NULL_APPEND_PROPERTY_ERROR) return true
 
   const details = `${error.message}\n${error.stack ?? ''}`
   return details.includes('fillBefore') && details.includes('.append')
@@ -102,7 +106,8 @@ const RECOVERY_ERROR_MATCHERS: RecoveryErrorMatcher[] = [
   {
     matches: (error) => messageIncludes(error, BLOCKNOTE_MISSING_ID_ERROR),
     reason: 'block_missing_id',
-    surfaces: ['render'],
+    repairsDocument: true,
+    surfaces: ['render', 'transform'],
   },
   {
     matches: (error) => messageMatches(error, BLOCKNOTE_TABLE_ROW_INDEX_ERROR),
@@ -134,7 +139,7 @@ const RECOVERY_ERROR_MATCHERS: RecoveryErrorMatcher[] = [
   {
     matches: isStaleBlockReferenceError,
     reason: 'stale_block_reference',
-    surfaces: ['transform'],
+    surfaces: ['render', 'transform'],
   },
   {
     matches: isInvalidBlockJoinError,

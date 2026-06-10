@@ -22,6 +22,10 @@ import 'tldraw/tldraw.css'
 import { useDocumentThemeMode } from '../hooks/useDocumentThemeMode'
 import { resolveEffectiveLocale, translate, type AppLocale } from '../lib/i18n'
 import type { ResolvedThemeMode } from '../lib/themeMode'
+import {
+  isWhiteboardPlatformPermissionRejection,
+  retainWhiteboardPlatformPermissionGuard,
+} from '../utils/whiteboardPlatformPermissionRejection'
 import { Button } from './ui/button'
 import { ActionTooltip } from './ui/action-tooltip'
 import { installTldrawTextMeasurementGuard } from './tldrawTextMeasurementGuard'
@@ -128,47 +132,23 @@ function useDocumentLocale(): AppLocale {
   return locale
 }
 
-function rejectionName(error: unknown): string {
-  if (error instanceof Error) return error.name
-  if (typeof error !== 'object' || error === null || !('name' in error)) return ''
-
-  const { name } = error
-  return typeof name === 'string' ? name : ''
+interface WhiteboardRuntimeGuardOptions {
+  onPlatformPermissionDenied: () => void
 }
 
-function rejectionMessage(error: unknown): string {
-  if (error instanceof Error) return error.message
-  if (typeof error === 'string') return error
-  if (typeof error !== 'object' || error === null || !('message' in error)) return ''
-
-  const { message } = error
-  return typeof message === 'string' ? message : ''
-}
-
-function isWhiteboardPlatformPermissionRejection(reason: unknown): boolean {
-  const name = rejectionName(reason).toLowerCase()
-  const message = rejectionMessage(reason).toLowerCase()
-  if (name === 'notallowederror') return true
-
-  return message.includes('notallowederror') || (
-    message.includes('not allowed')
-    && (
-      message.includes('permission')
-      || message.includes('platform')
-      || message.includes('user agent')
-    )
-  )
-}
-
-function installTldrawPlatformPermissionGuard(): () => void {
+function installTldrawPlatformPermissionGuard({ onPlatformPermissionDenied }: WhiteboardRuntimeGuardOptions): () => void {
+  const releaseWhiteboardPermissionGuard = retainWhiteboardPlatformPermissionGuard()
   const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
     if (!isWhiteboardPlatformPermissionRejection(event.reason)) return
     event.preventDefault()
+    onPlatformPermissionDenied()
   }
 
-  window.addEventListener('unhandledrejection', handleUnhandledRejection)
+  // Sentry installs its global rejection handler during app startup, before tldraw mounts.
+  window.addEventListener('unhandledrejection', handleUnhandledRejection, true)
   return () => {
-    window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+    window.removeEventListener('unhandledrejection', handleUnhandledRejection, true)
+    releaseWhiteboardPermissionGuard()
   }
 }
 
@@ -279,10 +259,10 @@ function installZoomAwareViewport(editor: Editor): () => void {
   }
 }
 
-function installWhiteboardRuntimeGuards(editor: Editor): () => void {
+function installWhiteboardRuntimeGuards(editor: Editor, options: WhiteboardRuntimeGuardOptions): () => void {
   const cleanupTextMeasurementGuard = installTldrawTextMeasurementGuard(editor)
   const cleanupZoomAwareViewport = installZoomAwareViewport(editor)
-  const cleanupPlatformPermissionGuard = installTldrawPlatformPermissionGuard()
+  const cleanupPlatformPermissionGuard = installTldrawPlatformPermissionGuard(options)
 
   return () => {
     cleanupPlatformPermissionGuard()
@@ -501,6 +481,8 @@ export function TldrawWhiteboard({
   const onSnapshotChangeRef = useRef(onSnapshotChange)
   const persistedSize = useMemo(() => normalizeSize({ height, width }), [height, width])
   const [resizingSize, setResizingSize] = useState<PixelSize | null>(null)
+  const [permissionDeniedBoardId, setPermissionDeniedBoardId] = useState<string | null>(null)
+  const platformPermissionDenied = permissionDeniedBoardId === boardId
   const visibleSize = resizingSize ?? persistedSize
   const { fullscreen, toggleFullscreen } = useFullscreenWhiteboard()
   const locale = useDocumentLocale()
@@ -515,6 +497,10 @@ export function TldrawWhiteboard({
     userPreferences,
   })
   const tldrawUiComponents = useMemo(() => ({ Dialogs: TolariaTldrawDialogs }), [])
+  const handleTldrawMount = useCallback((editor: Editor) =>
+    installWhiteboardRuntimeGuards(editor, {
+      onPlatformPermissionDenied: () => { setPermissionDeniedBoardId(boardId) },
+    }), [boardId])
 
   useEffect(() => {
     onSnapshotChangeRef.current = onSnapshotChange
@@ -616,10 +602,20 @@ export function TldrawWhiteboard({
         assetUrls={tldrawAssetUrls}
         components={tldrawUiComponents}
         key={boardId}
-        onMount={installWhiteboardRuntimeGuards}
+        onMount={handleTldrawMount}
         store={store}
         user={tldrawUser}
       />
+      {platformPermissionDenied ? (
+        <div
+          role="alert"
+          className="tldraw-whiteboard__permission-error"
+          data-testid="tldraw-whiteboard-permission-error"
+        >
+          <strong>{translate(locale, 'editor.whiteboard.permissionDeniedTitle')}</strong>
+          <span>{translate(locale, 'editor.whiteboard.permissionDeniedBody')}</span>
+        </div>
+      ) : null}
       <ActionTooltip copy={{ label: fullscreenLabel }} side="left">
         <Button
           type="button"

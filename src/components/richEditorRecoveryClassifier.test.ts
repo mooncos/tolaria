@@ -29,9 +29,13 @@ describe('richEditorRecoveryClassifier', () => {
     expect(classifyRichEditorRecoveryError(paragraphError, 'transform')).toBe('paragraph_index_out_of_range')
   })
 
-  it('keeps render recovery narrower than transform recovery', () => {
+  it('classifies missing-id failures across render and transform recovery', () => {
     expect(classifyRichEditorRecoveryError(new Error("Block doesn't have id"), 'render')).toBe('block_missing_id')
-    expect(classifyRichEditorRecoveryError(new Error("Block doesn't have id"), 'transform')).toBeNull()
+    expect(classifyRichEditorRecoveryError(new Error("Block doesn't have id"), 'transform')).toBe('block_missing_id')
+    expect(richEditorRecoveryErrorNeedsDocumentRepair(new Error("Block doesn't have id"))).toBe(true)
+  })
+
+  it('keeps surface-specific recovery errors separate', () => {
     expect(classifyRichEditorRecoveryError(webkitNotFoundError(), 'transform')).toBe('dom_not_found')
     expect(classifyRichEditorRecoveryError(webkitNotFoundError(), 'render')).toBeNull()
     expect(classifyRichEditorRecoveryError(transformError(), 'transform')).toBe('transform_error')
@@ -46,6 +50,7 @@ describe('richEditorRecoveryClassifier', () => {
 
     expect(classifyRichEditorRecoveryError(invalidContentError, 'transform')).toBe('transform_error')
     expect(richEditorRecoveryErrorNeedsDocumentRepair(invalidContentError)).toBe(true)
+    expect(classifyRichEditorRecoveryError(staleBlockError, 'render')).toBe('stale_block_reference')
     expect(classifyRichEditorRecoveryError(staleBlockError, 'transform')).toBe('stale_block_reference')
     expect(richEditorRecoveryErrorNeedsDocumentRepair(staleBlockError)).toBe(false)
   })

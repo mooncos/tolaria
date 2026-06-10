@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { translate, type AppLocale } from '../../lib/i18n'
 import type { ChangeActionTarget, ChangesContextMenuState } from './NoteListChangesMenu'
+import { getContextMenuPositionStyle } from './contextMenuPosition'
 
 function changeActionLabel(locale: AppLocale, action: ChangeActionTarget['action']): string {
   return translate(locale, action === 'restore' ? 'noteList.changes.restoreNote' : 'noteList.changes.discardChanges')
@@ -47,8 +48,8 @@ export function ChangesContextMenuNode({
   return (
     <div
       ref={ctxMenuRef}
-      className="fixed z-50 rounded-md border bg-popover p-1 shadow-md"
-      style={{ left: ctxMenu.x, top: ctxMenu.y, minWidth: 180 }}
+      className="fixed z-[12000] rounded-md border bg-popover p-1 shadow-md"
+      style={getContextMenuPositionStyle(ctxMenu, 180)}
       data-testid="changes-context-menu"
     >
       <Button
